@@ -23,3 +23,13 @@ TARGET_LINK_LIBRARIES(asio_spawn_proxy_http_server ${Boost_SYSTEM_LIBRARY})
 TARGET_LINK_LIBRARIES(asio_spawn_proxy_http_server ${Boost_CONTEXT_LIBRARY})
 TARGET_LINK_LIBRARIES(asio_spawn_proxy_http_server ${Boost_COROUTINE_LIBRARY})
 TARGET_LINK_LIBRARIES(asio_spawn_proxy_http_server ${Boost_DATE_TIME_LIBRARY})
+
+#==============================================================================
+
+ADD_EXECUTABLE(asio-rapidjson-http-server
+    asio_rapidjson_http_server.cpp
+)
+
+TARGET_LINK_LIBRARIES(asio-rapidjson-http-server ${Boost_REGEX_LIBRARY})
+TARGET_LINK_LIBRARIES(asio-rapidjson-http-server ${Boost_SYSTEM_LIBRARY})
+TARGET_LINK_LIBRARIES(asio-rapidjson-http-server ${Boost_DATE_TIME_LIBRARY})

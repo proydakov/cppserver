@@ -39,10 +39,9 @@ SET_PROPERTY(GLOBAL PROPERTY USE_FOLDERS ON)
 SET(LIBRARY_OUTPUT_PATH ${CMAKE_CURRENT_BINARY_DIR})
 SET(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_BINARY_DIR})
 
-FIND_PACKAGE(Boost COMPONENTS date_time regex system coroutine context REQUIRED)
-INCLUDE_DIRECTORIES(${Boost_INCLUDE_DIRS})
-
 #==============================================================================
+
+INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR}/rapidjson/include)
 
 ADD_SUBDIRECTORY(asio-server)
 ADD_SUBDIRECTORY(asio-http-server)
