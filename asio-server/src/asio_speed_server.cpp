@@ -12,13 +12,19 @@ class session : public std::enable_shared_from_this<session>
 public:
     session(tcp::socket socket) :
         socket_(std::move(socket)),
-        data_{ 0 }
+        max_iter_{ 1024 * 1024 * 32 },
+        data_{ 0 },
+        iter_{ 0 },
+        accumulator_{ 0 }
     {
+        std::clog << "-> session: " << &socket_ << std::endl;
     }
 
     ~session()
     {
-        //std::cout << "~session" << std::endl;
+        std::clog << "-> ~session: " << &socket_
+                  << " bytes sent: " << accumulator_
+                  << std::endl;
     }
 
     void start()
@@ -32,9 +38,15 @@ private:
         auto self(shared_from_this());
         socket_.async_read_some(boost::asio::buffer(data_, max_length),
             [this, self](boost::system::error_code ec, std::size_t length) {
-                std::clog << "read from: " << &socket_
+                std::clog << "-> read from: " << &socket_
                           << " data: " << data_.data()
+                          << " length: " << length
                           << std::endl;
+
+                if(strncmp(data_.data(), "TEST", 4) != 0) {
+                    return;
+                }
+
                 if (!ec) {
                     do_write();
                 }
@@ -43,24 +55,30 @@ private:
 
     void do_write()
     {
+        iter_++;
+        if(iter_ > max_iter_) {
+            return;
+        }
+
         auto self(shared_from_this());
         boost::asio::async_write(socket_, boost::asio::buffer(data_),
             [this, self](boost::system::error_code ec, std::size_t length) {
-                //std::clog << "do_write: " << length << std::endl;
+                accumulator_ += length;
                 if (!ec) {
                     do_write();
-                }
-                else {
-                    std::clog << "done: " << &socket_ << std::endl;
                 }
         });
     }
 
 private:
     tcp::socket socket_;
+    size_t max_iter_;
 
-    enum { max_length = 1024 * 256 };
+    enum { max_length = 1024 * 8 };
     std::array<char, max_length> data_;
+
+    size_t iter_;
+    size_t accumulator_;
 };
 
 class server
@@ -103,11 +121,13 @@ int main(int argc, char* argv[])
         server s(io_service, std::atoi(argv[1]));
 
         std::clog << "<- io_service run" << std::endl;
+
         io_service.run();
+
         std::clog << "<- io_service done" << std::endl;
     }
     catch (std::exception& e) {
-        std::cerr << "exception: " << e.what() << "\n";
+        std::cerr << "<- main exception: " << e.what() << "\n";
     }
 
     return 0;

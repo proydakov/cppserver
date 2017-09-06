@@ -1,8 +1,8 @@
+#include <chrono>
 #include <string>
 #include <istream>
 #include <ostream>
 #include <iostream>
-
 #include <boost/asio.hpp>
 
 using boost::asio::ip::tcp;
@@ -21,15 +21,38 @@ class client : public std::enable_shared_from_this<client>
 {
 public:
     client(boost::asio::io_service& io_service) :
-        socket_(io_service),
-        strand_(io_service)
+        socket_(io_service)
     {
         std::clog << "<- client" << std::endl;
     }
 
     ~client()
     {
-        std::clog << "<- ~client" << std::endl;
+        std::chrono::time_point<std::chrono::system_clock> end = std::chrono::system_clock::now();
+
+        size_t elapsed_seconds = std::chrono::duration_cast<std::chrono::seconds>(end - start_time_).count();
+
+        size_t bit_in_sec = accumulator_ / elapsed_seconds * 8;
+
+        double bandwidth = bit_in_sec;
+        std::string units = "Bit/s";
+        if(bit_in_sec > 1000000000) {
+            bandwidth = bit_in_sec / 1000000000.0;
+            units = "GBit/s";
+        }
+        else if(bit_in_sec > 1000000) {
+            bandwidth = bit_in_sec / 1000000.0;
+            units = "MBit/s";
+        }
+        else if(bit_in_sec > 1000) {
+            bandwidth = bit_in_sec / 1000.0;
+            units = "KBit/s";
+        }
+
+        std::clog << "<- ~client. bytes received: " << accumulator_
+                  << " process time: " << elapsed_seconds << " (seconds)"
+                  << " bandwidth: " << bandwidth << " " << units
+                  << std::endl;
     }
 
     void go(const std::string& server, int port)
@@ -54,11 +77,12 @@ public:
 private:
     void do_write()
     {
+        start_time_ = std::chrono::system_clock::now();
+
         auto self(shared_from_this());
         build_request();
         boost::asio::async_write(socket_, request_,
             [this, self](boost::system::error_code ec, std::size_t length) {
-                //std::clog << "do_write: " << length << std::endl;
                 if (!ec) {
                     do_read();
                 }
@@ -70,6 +94,7 @@ private:
         auto self(shared_from_this());
         socket_.async_read_some(boost::asio::buffer(response_buffer_),
             [this, self](boost::system::error_code ec, std::size_t length) {
+                accumulator_ += length;
                 if (!ec) {
                     do_read();
                 }
@@ -79,17 +104,19 @@ private:
     void build_request()
     {
         std::ostream request_stream(&request_);
-        request_stream << "GET";
+        request_stream << "TEST";
     }
 
 private:
     tcp::socket socket_;
-    boost::asio::io_service::strand strand_;
-
     boost::asio::streambuf request_;
 
-    enum { max_length = 1024 * 256 };
+    std::chrono::time_point<std::chrono::system_clock> start_time_;
+
+    enum { max_length = 1024 * 8 };
     std::array<char, max_length> response_buffer_;
+
+    size_t accumulator_;
 };
 
 int main(int argc, char* argv[])
@@ -117,10 +144,6 @@ int main(int argc, char* argv[])
     catch (const std::exception& e)
     {
         std::cerr << "<- main exception: " << e.what() << "\n";
-    }
-    catch (...)
-    {
-        std::cerr << "<- main unknown error" << std::endl;
     }
 
     return 0;
