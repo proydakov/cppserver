@@ -1,19 +1,24 @@
 #include <thread>
 #include <string>
-#include <vector>
+#include <chrono>
 #include <iostream>
 
-#include <Poco/Net/ServerSocket.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/Net/ServerSocket.h>
 #include <Poco/Util/ServerApplication.h>
+
+#include <rapidjson/writer.h>
+#include <rapidjson/ostreamwrapper.h>
 
 using namespace Poco::Net;
 using namespace Poco::Util;
+
+using namespace rapidjson;
 
 namespace {
 
@@ -36,39 +41,95 @@ const std::string PAGE = R"(
 working.</p>
 
 <p>For online documentation please refer to
-<a href="https://github.com/proydakov/poco-http-server">poco-http-server</a>.<br/>
+<a href="https://github.com/proydakov/cpp-server/tree/master/poco-http-server">poco-http-server</a>.<br/>
 
 <p><em>Thank you for using POCO.</em></p>
 </body>
 </html>
 )";
 
-}
-
-class IRequestHandler : public HTTPRequestHandler
+class RequestHandler : public HTTPRequestHandler
 {
 public:
+    RequestHandler(HTTPServer const& server) :
+        server_(server)
+    {
+    }
+
     void handleRequest(HTTPServerRequest &req, HTTPServerResponse &resp) override
     {
-        std::vector<int> data(1024 * 1024 * 16, 0);
+        auto const& uri = req.getURI();
 
+        if("/" == uri) {
+            handleRequestStatic(req, resp);
+        }
+        else if("/status" == uri) {
+            handleRequestStatus(req, resp);
+        }
+        else {
+            resp.setStatus(HTTPResponse::HTTP_NOT_FOUND);
+            std::ostream& out = resp.send();
+            out.flush();
+        }
+    }
+
+private:
+    void handleRequestStatic(HTTPServerRequest &req, HTTPServerResponse &resp)
+    {
         resp.setStatus(HTTPResponse::HTTP_OK);
         resp.setContentType("text/html");
+        resp.setContentLength(PAGE.size());
 
         std::ostream& out = resp.send();
+        out << PAGE;
 
-        out << "vec[" << data.size() << "]";
         out.flush();
     }
+
+    void handleRequestStatus(HTTPServerRequest &req, HTTPServerResponse &resp)
+    {
+        resp.setStatus(HTTPResponse::HTTP_OK);
+        resp.setContentType("application/json");
+
+        StringBuffer buffer;
+        Writer<StringBuffer> writer(buffer);
+
+        writer.StartObject();
+
+        writer.Key("currentConnections");
+        writer.Uint(server_.currentConnections());
+
+        writer.Key("queuedConnections");
+        writer.Uint(server_.queuedConnections());
+
+        writer.EndObject();
+
+        resp.setContentLength(buffer.GetLength());
+
+        std::ostream& out = resp.send();
+        out << buffer.GetString();
+        out.flush();
+    }
+
+private:
+    HTTPServer const& server_;
 };
 
-class IRequestHandlerFactory : public HTTPRequestHandlerFactory
+class RequestHandlerFactory : public HTTPRequestHandlerFactory
 {
 public:
     HTTPRequestHandler* createRequestHandler(const HTTPServerRequest &) override
     {
-        return new IRequestHandler;
+        return new RequestHandler(*server_);
     }
+
+    void setServer(HTTPServer const* server)
+    {
+        server_ = server;
+    }
+
+private:
+    HTTPServer const* server_ = nullptr;
 };
 
 class IServerApplication : public ServerApplication
@@ -78,14 +139,19 @@ protected:
     {
         unsigned int hardware_concurrency = std::thread::hardware_concurrency();
 
-        Poco::Net::HTTPServerParams::Ptr parameters = new Poco::Net::HTTPServerParams();
+        HTTPServerParams::Ptr parameters = new HTTPServerParams();
         parameters->setTimeout(10000);
-        parameters->setMaxQueued(1000);
+        parameters->setMaxQueued(10000);
         parameters->setMaxThreads(hardware_concurrency);
 
         const Poco::UInt16 port = 11111;
-        const Poco::Net::ServerSocket socket(port);
-        HTTPServer s(new IRequestHandlerFactory, socket, parameters);
+        ServerSocket socket(port);
+        socket.setReuseAddress(true);
+        socket.setReusePort(true);
+
+        auto factory = new RequestHandlerFactory();
+        HTTPServer s(factory, socket, parameters);
+        factory->setServer(&s);
 
         s.start();
         std::cout << "server started: 127.0.0.1:" << port << std::endl;
@@ -99,13 +165,11 @@ protected:
     }
 };
 
+}
+
 int main(int argc, char** argv)
 {
-    std::vector<int> data(1024 * 1024 * 32, 0);
-
     IServerApplication app;
-
-    std::cout << "size: " << data.size() << std::endl;
 
     return app.run(argc, argv);
 }
